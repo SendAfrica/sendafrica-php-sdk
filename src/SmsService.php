@@ -96,7 +96,7 @@ class SmsService
     private function generateOtp(int $length): string
     {
         $max = (int) str_repeat('9', $length);
-        $min = (int) str_repeat('9', $length - 1) . '0';
+        $min = (int) (str_repeat('9', $length - 1) . '0');
         $otp = random_int($min, $max);
         return (string) $otp;
     }
