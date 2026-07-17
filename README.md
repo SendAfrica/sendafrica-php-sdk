@@ -1,18 +1,23 @@
 # SendAfrica PHP SDK
 
-Complete SMS auth system for PHP apps. Send SMS, handle OTP verification, login, registration, password reset, and phone verification — all in a few lines of code.
-
-No need to build anything. Just install and use.
+A complete SMS authentication system for PHP applications. Install it, add your API key, and you have registration verification, two-factor login, password reset, and phone verification — all working out of the box.
 
 ---
 
-## Requirements
+## Table of Contents
 
-- PHP 7.4 or newer
-- `ext-curl` enabled
-- `ext-json` enabled
-- A SendAfrica account — [sign up free](https://sendafrica.online)
-- An API key — create one in **Settings > API Keys** in your dashboard
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Database Setup](#database-setup)
+- [User Registration with Phone Verification](#user-registration-with-phone-verification)
+- [Login with Two-Factor Authentication](#login-with-two-factor-authentication)
+- [Forgot Password / Reset Password](#forgot-password--reset-password)
+- [Phone Number Verification](#phone-number-verification)
+- [Sending Transactional SMS](#sending-transactional-sms)
+- [Error Handling](#error-handling)
+- [API Reference](#api-reference)
+- [Phone Number Format](#phone-number-format)
+- [Help & Support](#help--support)
 
 ---
 
@@ -24,367 +29,531 @@ composer require sendafrica/php-sdk
 
 ---
 
-## Setup
+## Configuration
 
-Add your API key to your environment. **Never hardcode it in source code.**
+Store your API key in an environment file. Never commit it to version control.
 
-### Using .env (recommended)
-
-```bash
-# .env
+**.env**
+```
 SENDAFRICA_API_KEY=your_api_key_here
+DB_HOST=localhost
+DB_NAME=myapp
+DB_USER=root
+DB_PASS=
 ```
 
+**config.php**
 ```php
-// config.php
+<?php
 return [
     'sendafrica_api_key' => getenv('SENDAFRICA_API_KEY'),
+    'db_host' => getenv('DB_HOST'),
+    'db_name' => getenv('DB_NAME'),
+    'db_user' => getenv('DB_USER'),
+    'db_pass' => getenv('DB_PASS'),
 ];
 ```
 
-### Using a config file
-
-```php
-// config.php
-return [
-    'sendafrica_api_key' => 'your_api_key_here',
-];
-```
-
----
-
-## Initialize the Client
-
-Every file that sends SMS should start with this:
-
+**bootstrap.php** — Load this at the top of every file:
 ```php
 <?php
 require_once __DIR__ . '/vendor/autoload.php';
-
 $config = require __DIR__ . '/config.php';
-$client = new \SendAfrica\Client($config['sendafrica_api_key']);
+
+function db(): PDO {
+    static $pdo = null;
+    if ($pdo === null) {
+        $c = require __DIR__ . '/config.php';
+        $pdo = new PDO(
+            "mysql:host={$c['db_host']};dbname={$c['db_name']}",
+            $c['db_user'],
+            $c['db_pass'],
+            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
+        );
+    }
+    return $pdo;
+}
+
+function client(): \SendAfrica\Client {
+    static $client = null;
+    if ($client === null) {
+        $client = new \SendAfrica\Client(require __DIR__ . '/config.php')['sendafrica_api_key']);
+    }
+    return $client;
+}
 ```
 
 ---
 
-## Send SMS
+## Database Setup
 
-```php
-$client->send('0712345678', 'Your order #1234 is confirmed!');
-```
+Run this SQL to create the users table with OTP support:
 
-With a sender ID:
+```sql
+CREATE TABLE users (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    phone VARCHAR(20) NOT NULL UNIQUE,
+    name VARCHAR(100) NOT NULL,
+    password_hash VARCHAR(255),
+    phone_verified TINYINT(1) DEFAULT 0,
 
-```php
-$client->sms->send('0712345678', 'Your order is ready!', 'MyShop');
-```
+    -- Registration OTP
+    reg_otp_hash VARCHAR(255),
+    reg_otp_created_at DATETIME,
 
-Send to multiple recipients:
+    -- Login OTP
+    login_otp_hash VARCHAR(255),
+    login_otp_created_at DATETIME,
 
-```php
-$client->sms->sendBulk(
-    to: ['0712345678', '0754000111', '0789012345'],
-    message: 'Flash sale today!',
-    from: 'MyShop'
+    -- Password reset OTP
+    reset_otp_hash VARCHAR(255),
+    reset_otp_created_at DATETIME,
+
+    -- Phone verification OTP
+    phone_otp_hash VARCHAR(255),
+    phone_otp_created_at DATETIME,
+
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 ```
 
 ---
 
-## User Registration
+## User Registration with Phone Verification
 
-When a user signs up, send a verification code to their phone.
+When a new user signs up, verify their phone number before creating the account.
 
-### Step 1 — Send the OTP
+### send-registration-otp.php
+
+Called when the user submits the registration form.
 
 ```php
 <?php
-// register.php
-require_once __DIR__ . '/vendor/autoload.php';
+require_once __DIR__ . '/bootstrap.php';
 
-$config = require __DIR__ . '/config.php';
-$client = new \SendAfrica\Client($config['sendafrica_api_key']);
+header('Content-Type: application/json');
 
-$phone = $_POST['phone'];
-$name  = $_POST['name'];
+$phone = trim($_POST['phone'] ?? '');
+$name  = trim($_POST['name'] ?? '');
 
 if (empty($phone) || empty($name)) {
     http_response_code(400);
-    die('All fields required.');
+    echo json_encode(['success' => false, 'message' => 'Name and phone number are required.']);
+    exit();
 }
 
-$otp = $client->auth->sendRegistrationOtp($phone);
+// Check if phone is already registered
+$exists = db()->prepare("SELECT id FROM users WHERE phone = ?");
+$exists->execute([$phone]);
+if ($exists->fetch()) {
+    http_response_code(409);
+    echo json_encode(['success' => false, 'message' => 'This phone number is already registered.']);
+    exit();
+}
 
-// Store hashed OTP in your database
-$hash = $client->auth->hash($otp['otp']);
+// Send OTP
+$otp = client()->auth->sendRegistrationOtp($phone);
 
-$pdo = new PDO('mysql:host=localhost;dbname=myapp', 'root', '');
-$stmt = $pdo->prepare("INSERT INTO users (phone, name, otp_hash, otp_created_at) VALUES (?, ?, ?, NOW())");
+// Save hashed OTP to database
+$hash = client()->auth->hash($otp['otp']);
+$stmt = db()->prepare("INSERT INTO users (phone, name, reg_otp_hash, reg_otp_created_at) VALUES (?, ?, ?, NOW())");
 $stmt->execute([$phone, $name, $hash]);
 
-echo json_encode(['success' => true, 'message' => 'Verification code sent']);
+echo json_encode(['success' => true, 'message' => 'Verification code sent to your phone.']);
 ```
 
-### Step 2 — Verify the code
+### verify-registration.php
+
+Called when the user enters the code they received.
 
 ```php
 <?php
-// verify-registration.php
-require_once __DIR__ . '/vendor/autoload.php';
+require_once __DIR__ . '/bootstrap.php';
 
-$config = require __DIR__ . '/config.php';
-$client = new \SendAfrica\Client($config['sendafrica_api_key']);
+header('Content-Type: application/json');
 
-$phone = $_POST['phone'];
-$code  = $_POST['code'];
+$phone = trim($_POST['phone'] ?? '');
+$code  = trim($_POST['code'] ?? '');
 
-$pdo = new PDO('mysql:host=localhost;dbname=myapp', 'root', '');
-$stmt = $pdo->prepare("SELECT otp_hash, otp_created_at FROM users WHERE phone = ?");
+if (empty($phone) || empty($code)) {
+    http_response_code(400);
+    echo json_encode(['success' => false, 'message' => 'Phone and code are required.']);
+    exit();
+}
+
+// Get user from database
+$stmt = db()->prepare("SELECT id, reg_otp_hash, reg_otp_created_at FROM users WHERE phone = ?");
 $stmt->execute([$phone]);
 $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
-if (!$user) {
-    die('User not found.');
+if (!$user || !$user['reg_otp_hash']) {
+    http_response_code(400);
+    echo json_encode(['success' => false, 'message' => 'No pending verification. Please register again.']);
+    exit();
 }
 
-$result = $client->auth->verifyWithExpiry(
+// Verify the code
+$result = client()->auth->verifyWithExpiry(
     entered: $code,
-    expected: $user['otp_hash'],
-    createdAt: $user['otp_created_at'],
+    expected: $user['reg_otp_hash'],
+    createdAt: $user['reg_otp_created_at'],
     expiryMinutes: 10
 );
 
 if ($result['valid']) {
-    // Mark phone as verified
-    $pdo->prepare("UPDATE users SET phone_verified = 1, otp_hash = NULL, otp_created_at = NULL WHERE phone = ?")->execute([$phone]);
-    echo 'Account created!';
+    // Mark account as verified, clear OTP
+    db()->prepare("UPDATE users SET phone_verified = 1, reg_otp_hash = NULL, reg_otp_created_at = NULL WHERE id = ?")
+        ->execute([$user['id']]);
+
+    // Start session
+    session_start();
+    $_SESSION['user_id'] = $user['id'];
+
+    echo json_encode(['success' => true, 'message' => 'Account created successfully.']);
 } else {
-    echo $result['message'];
+    echo json_encode(['success' => false, 'message' => $result['message']]);
 }
+```
+
+### The HTML form
+
+```html
+<!-- register.html -->
+<form id="registerForm">
+    <input type="text" name="name" placeholder="Full name" required>
+    <input type="text" name="phone" placeholder="0712345678" required>
+    <button type="submit">Register</button>
+</form>
+
+<div id="otpSection" style="display:none;">
+    <p>Enter the code sent to your phone:</p>
+    <input type="text" id="otpCode" placeholder="000000" maxlength="6" required>
+    <button onclick="verifyOtp()">Verify</button>
+</div>
+
+<script>
+document.getElementById('registerForm').onsubmit = async (e) => {
+    e.preventDefault();
+    const data = new FormData(e.target);
+
+    const res = await fetch('send-registration-otp.php', { method: 'POST', body: data });
+    const json = await res.json();
+
+    if (json.success) {
+        document.getElementById('otpSection').style.display = 'block';
+    } else {
+        alert(json.message);
+    }
+};
+
+async function verifyOtp() {
+    const phone = document.querySelector('[name=phone]').value;
+    const code = document.getElementById('otpCode').value;
+
+    const res = await fetch('verify-registration.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `phone=${encodeURIComponent(phone)}&code=${encodeURIComponent(code)}`
+    });
+    const json = await res.json();
+
+    if (json.success) {
+        window.location.href = '/dashboard.php';
+    } else {
+        alert(json.message);
+    }
+}
+</script>
 ```
 
 ---
 
-## Login (Two-Factor Auth)
+## Login with Two-Factor Authentication
 
-After the user enters their password, send an OTP to their phone.
+After the user enters their password, send a login code to their phone.
 
-### Step 1 — Send login code
+### login.php
 
 ```php
 <?php
-// login.php
-require_once __DIR__ . '/vendor/autoload.php';
+require_once __DIR__ . '/bootstrap.php';
 
-$config = require __DIR__ . '/config.php';
-$client = new \SendAfrica\Client($config['sendafrica_api_key']);
+header('Content-Type: application/json');
 
-$phone    = $_POST['phone'];
-$password = $_POST['password'];
+$phone    = trim($_POST['phone'] ?? '');
+$password = $_POST['password'] ?? '';
 
-$pdo = new PDO('mysql:host=localhost;dbname=myapp', 'root', '');
-$stmt = $pdo->prepare("SELECT id, password_hash FROM users WHERE phone = ?");
+if (empty($phone) || empty($password)) {
+    http_response_code(400);
+    echo json_encode(['success' => false, 'message' => 'Phone and password are required.']);
+    exit();
+}
+
+// Find user
+$stmt = db()->prepare("SELECT id, password_hash, phone_verified FROM users WHERE phone = ?");
 $stmt->execute([$phone]);
 $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
 if (!$user || !password_verify($password, $user['password_hash'])) {
-    die('Invalid credentials.');
+    http_response_code(401);
+    echo json_encode(['success' => false, 'message' => 'Invalid credentials.']);
+    exit();
 }
 
-// Password correct — send OTP
-$otp = $client->auth->sendLoginOtp($phone, appName: 'MyApp');
+if (!$user['phone_verified']) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'message' => 'Please verify your phone number first.']);
+    exit();
+}
 
-// Store hash in DB
-$hash = $client->auth->hash($otp['otp']);
-$pdo->prepare("UPDATE users SET login_otp_hash = ?, login_otp_created_at = NOW() WHERE id = ?")->execute([$hash, $user['id']]);
+// Password correct — send login OTP
+$otp = client()->auth->sendLoginOtp($phone, appName: 'MyApp');
 
-echo json_encode(['success' => true, 'message' => 'Login code sent to your phone']);
+$hash = client()->auth->hash($otp['otp']);
+db()->prepare("UPDATE users SET login_otp_hash = ?, login_otp_created_at = NOW() WHERE id = ?")
+    ->execute([$hash, $user['id']]);
+
+echo json_encode(['success' => true, 'message' => 'Login code sent to your phone.']);
 ```
 
-### Step 2 — Verify login code
+### verify-login.php
 
 ```php
 <?php
-// verify-login.php
-require_once __DIR__ . '/vendor/autoload.php';
+require_once __DIR__ . '/bootstrap.php';
 
-$config = require __DIR__ . '/config.php';
-$client = new \SendAfrica\Client($config['sendafrica_api_key']);
+header('Content-Type: application/json');
 
-$phone = $_POST['phone'];
-$code  = $_POST['code'];
+$phone = trim($_POST['phone'] ?? '');
+$code  = trim($_POST['code'] ?? '');
 
-$pdo = new PDO('mysql:host=localhost;dbname=myapp', 'root', '');
-$stmt = $pdo->prepare("SELECT id, login_otp_hash, login_otp_created_at FROM users WHERE phone = ?");
+$stmt = db()->prepare("SELECT id, login_otp_hash, login_otp_created_at FROM users WHERE phone = ?");
 $stmt->execute([$phone]);
 $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
-$result = $client->auth->verifyWithExpiry(
-    entered: $code,
-    expected: $user['login_otp_hash'],
-    createdAt: $user['login_otp_created_at'],
-    expiryMinutes: 10
-);
+if (!$user || !$user['login_otp_hash']) {
+    http_response_code(400);
+    echo json_encode(['success' => false, 'message' => 'No pending login. Please try again.']);
+    exit();
+}
+
+$result = client()->auth->verifyWithExpiry($code, $user['login_otp_hash'], $user['login_otp_created_at']);
 
 if ($result['valid']) {
-    // Clear OTP and create session
-    $pdo->prepare("UPDATE users SET login_otp_hash = NULL, login_otp_created_at = NULL WHERE id = ?")->execute([$user['id']]);
+    // Clear OTP, create session
+    db()->prepare("UPDATE users SET login_otp_hash = NULL, login_otp_created_at = NULL WHERE id = ?")
+        ->execute([$user['id']]);
 
     session_start();
     $_SESSION['user_id'] = $user['id'];
 
-    echo 'Welcome back!';
+    echo json_encode(['success' => true, 'message' => 'Welcome back!']);
 } else {
-    echo $result['message'];
+    echo json_encode(['success' => false, 'message' => $result['message']]);
 }
+```
+
+### The HTML form
+
+```html
+<!-- login.html -->
+<form id="loginForm">
+    <input type="text" name="phone" placeholder="0712345678" required>
+    <input type="password" name="password" placeholder="Password" required>
+    <button type="submit">Login</button>
+</form>
+
+<div id="otpSection" style="display:none;">
+    <p>Enter the code sent to your phone:</p>
+    <input type="text" id="otpCode" placeholder="000000" maxlength="6" required>
+    <button onclick="verifyLogin()">Verify</button>
+</div>
+
+<script>
+document.getElementById('loginForm').onsubmit = async (e) => {
+    e.preventDefault();
+    const data = new FormData(e.target);
+
+    const res = await fetch('login.php', { method: 'POST', body: data });
+    const json = await res.json();
+
+    if (json.success) {
+        document.getElementById('otpSection').style.display = 'block';
+    } else {
+        alert(json.message);
+    }
+};
+
+async function verifyLogin() {
+    const phone = document.querySelector('[name=phone]').value;
+    const code = document.getElementById('otpCode').value;
+
+    const res = await fetch('verify-login.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `phone=${encodeURIComponent(phone)}&code=${encodeURIComponent(code)}`
+    });
+    const json = await res.json();
+
+    if (json.success) {
+        window.location.href = '/dashboard.php';
+    } else {
+        alert(json.message);
+    }
+}
+</script>
 ```
 
 ---
 
-## Forgot Password
+## Forgot Password / Reset Password
 
-### Step 1 — Request reset code
+### forgot-password.php
 
 ```php
 <?php
-// forgot-password.php
-require_once __DIR__ . '/vendor/autoload.php';
+require_once __DIR__ . '/bootstrap.php';
 
-$config = require __DIR__ . '/config.php';
-$client = new \SendAfrica\Client($config['sendafrica_api_key']);
+header('Content-Type: application/json');
 
-$phone = $_POST['phone'];
+$phone = trim($_POST['phone'] ?? '');
 
-$pdo = new PDO('mysql:host=localhost;dbname=myapp', 'root', '');
-$stmt = $pdo->prepare("SELECT id FROM users WHERE phone = ?");
+$stmt = db()->prepare("SELECT id FROM users WHERE phone = ?");
 $stmt->execute([$phone]);
 $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
 if (!$user) {
     // Don't reveal whether the phone exists
-    echo json_encode(['success' => true, 'message' => 'If that phone is registered, a reset code has been sent.']);
+    echo json_encode(['success' => true, 'message' => 'If that number is registered, a reset code has been sent.']);
     exit();
 }
 
-$otp = $client->auth->sendPasswordResetOtp($phone);
-$hash = $client->auth->hash($otp['otp']);
+$otp = client()->auth->sendPasswordResetOtp($phone);
+$hash = client()->auth->hash($otp['otp']);
 
-$pdo->prepare("UPDATE users SET reset_otp_hash = ?, reset_otp_created_at = NOW() WHERE id = ?")->execute([$hash, $user['id']]);
+db()->prepare("UPDATE users SET reset_otp_hash = ?, reset_otp_created_at = NOW() WHERE id = ?")
+    ->execute([$hash, $user['id']]);
 
-echo json_encode(['success' => true, 'message' => 'Reset code sent to your phone']);
+echo json_encode(['success' => true, 'message' => 'Reset code sent to your phone.']);
 ```
 
-### Step 2 — Reset password
+### reset-password.php
 
 ```php
 <?php
-// reset-password.php
-require_once __DIR__ . '/vendor/autoload.php';
+require_once __DIR__ . '/bootstrap.php';
 
-$config = require __DIR__ . '/config.php';
-$client = new \SendAfrica\Client($config['sendafrica_api_key']);
+header('Content-Type: application/json');
 
-$phone       = $_POST['phone'];
-$code        = $_POST['code'];
-$newPassword = $_POST['new_password'];
+$phone       = trim($_POST['phone'] ?? '');
+$code        = trim($_POST['code'] ?? '');
+$newPassword = $_POST['new_password'] ?? '';
 
-$pdo = new PDO('mysql:host=localhost;dbname=myapp', 'root', '');
-$stmt = $pdo->prepare("SELECT id, reset_otp_hash, reset_otp_created_at FROM users WHERE phone = ?");
+if (strlen($newPassword) < 8) {
+    http_response_code(400);
+    echo json_encode(['success' => false, 'message' => 'Password must be at least 8 characters.']);
+    exit();
+}
+
+$stmt = db()->prepare("SELECT id, reset_otp_hash, reset_otp_created_at FROM users WHERE phone = ?");
 $stmt->execute([$phone]);
 $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
-$result = $client->auth->verifyWithExpiry($code, $user['reset_otp_hash'], $user['reset_otp_created_at']);
+if (!$user || !$user['reset_otp_hash']) {
+    http_response_code(400);
+    echo json_encode(['success' => false, 'message' => 'No pending reset. Please request a new code.']);
+    exit();
+}
+
+$result = client()->auth->verifyWithExpiry($code, $user['reset_otp_hash'], $user['reset_otp_created_at']);
 
 if ($result['valid']) {
     $newHash = password_hash($newPassword, PASSWORD_DEFAULT);
-    $pdo->prepare("UPDATE users SET password_hash = ?, reset_otp_hash = NULL, reset_otp_created_at = NULL WHERE id = ?")->execute([$newHash, $user['id']]);
-    echo 'Password updated!';
+    db()->prepare("UPDATE users SET password_hash = ?, reset_otp_hash = NULL, reset_otp_created_at = NULL WHERE id = ?")
+        ->execute([$newHash, $user['id']]);
+
+    echo json_encode(['success' => true, 'message' => 'Password updated successfully.']);
 } else {
-    echo $result['message'];
+    echo json_encode(['success' => false, 'message' => $result['message']]);
 }
 ```
 
 ---
 
-## Verify Phone Number
+## Phone Number Verification
 
-Send a short 4-digit code to verify a user's phone number.
+For verifying a phone number separately (not during registration):
 
 ```php
 <?php
 // send-phone-otp.php
-require_once __DIR__ . '/vendor/autoload.php';
+require_once __DIR__ . '/bootstrap.php';
 
-$config = require __DIR__ . '/config.php';
-$client = new \SendAfrica\Client($config['sendafrica_api_key']);
+header('Content-Type: application/json');
 
-$phone = $_POST['phone'];
+$phone = trim($_POST['phone'] ?? '');
+$userId = $_SESSION['user_id'];
 
-$otp = $client->auth->sendPhoneVerificationOtp($phone, length: 4);
+$otp = client()->auth->sendPhoneVerificationOtp($phone, length: 4);
+$hash = client()->auth->hash($otp['otp']);
 
-$hash = $client->auth->hash($otp['otp']);
-$pdo = new PDO('mysql:host=localhost;dbname=myapp', 'root', '');
-$pdo->prepare("UPDATE users SET phone_otp_hash = ?, phone_otp_created_at = NOW() WHERE phone = ?")->execute([$hash, $phone]);
+db()->prepare("UPDATE users SET phone_otp_hash = ?, phone_otp_created_at = NOW() WHERE id = ?")
+    ->execute([$hash, $userId]);
 
-echo json_encode(['success' => true]);
+echo json_encode(['success' => true, 'message' => 'Verification code sent.']);
 ```
 
 ```php
 <?php
 // verify-phone.php
-require_once __DIR__ . '/vendor/autoload.php';
+require_once __DIR__ . '/bootstrap.php';
 
-$config = require __DIR__ . '/config.php';
-$client = new \SendAfrica\Client($config['sendafrica_api_key']);
+header('Content-Type: application/json');
 
-$phone = $_POST['phone'];
-$code  = $_POST['code'];
+$code = trim($_POST['code'] ?? '');
+$userId = $_SESSION['user_id'];
 
-$pdo = new PDO('mysql:host=localhost;dbname=myapp', 'root', '');
-$stmt = $pdo->prepare("SELECT phone_otp_hash, phone_otp_created_at FROM users WHERE phone = ?");
-$stmt->execute([$phone]);
+$stmt = db()->prepare("SELECT phone_otp_hash, phone_otp_created_at FROM users WHERE id = ?");
+$stmt->execute([$userId]);
 $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
-$result = $client->auth->verifyWithExpiry($code, $user['phone_otp_hash'], $user['phone_otp_created_at']);
+$result = client()->auth->verifyWithExpiry($code, $user['phone_otp_hash'], $user['phone_otp_created_at']);
 
 if ($result['valid']) {
-    $pdo->prepare("UPDATE users SET phone_verified = 1, phone_otp_hash = NULL, phone_otp_created_at = NULL WHERE phone = ?")->execute([$phone]);
-    echo 'Phone verified!';
+    db()->prepare("UPDATE users SET phone_verified = 1, phone_otp_hash = NULL, phone_otp_created_at = NULL WHERE id = ?")
+        ->execute([$userId]);
+
+    echo json_encode(['success' => true, 'message' => 'Phone verified!']);
 } else {
-    echo $result['message'];
+    echo json_encode(['success' => false, 'message' => $result['message']]);
 }
 ```
 
 ---
 
-## Transaction Confirmation
+## Sending Transactional SMS
 
-Send a code to confirm a payment or order:
-
-```php
-$otp = $client->auth->sendTransactionOtp($phone, details: 'order #1234');
-```
-
----
-
-## Custom Message
-
-Write your own SMS with `{{code}}` as the OTP placeholder:
+Beyond auth, send any transactional message:
 
 ```php
-$otp = $client->auth->sendCustomOtp(
-    to: $phone,
-    message: 'Your MyShop code is {{code}}. Do not share it.',
-    length: 6,
-    expiry: 10
-);
+// Order confirmation
+$client->send('0712345678', 'Your order #1234 has been confirmed. Track at myshop.co.tz/track/1234');
+
+// Delivery notification
+$client->send('0712345678', 'Your order is out for delivery. Expected arrival: 3:00 PM.');
+
+// Appointment reminder
+$client->send('0712345678', 'Reminder: You have an appointment tomorrow at 10:00 AM.');
+
+// Payment confirmation
+$client->send('0712345678', 'Payment of TZS 50,000 received for order #1234. Thank you!');
 ```
 
 ---
 
 ## Error Handling
 
-Always wrap SMS calls in try/catch:
+Wrap all SDK calls in try/catch. The SDK throws typed exceptions for each error scenario:
 
 ```php
 <?php
@@ -401,39 +570,75 @@ $config = require __DIR__ . '/config.php';
 $client = new Client($config['sendafrica_api_key']);
 
 try {
-    $client->send('0712345678', 'Hello!');
+    $client->send('0712345678', 'Your message');
 } catch (AuthenticationException $e) {
-    error_log('SendAfrica: Invalid API key');
+    // API key is invalid or revoked
+    error_log('SendAfrica: Check your API key in Settings > API Keys');
 } catch (InsufficientCreditsException $e) {
-    error_log('SendAfrica: Out of credits — top up at app.sendafrica.online');
+    // Not enough credits
+    error_log('SendAfrica: Buy more credits at app.sendafrica.online');
 } catch (RateLimitException $e) {
-    // Retry after a delay
+    // Too many requests — wait and retry
     sleep(60);
-    $client->send('0712345678', 'Hello!');
+    $client->send('0712345678', 'Your message');
 } catch (ValidationException $e) {
+    // Bad phone number, missing fields, etc.
     error_log('SendAfrica: ' . $e->getMessage());
 } catch (SendAfricaException $e) {
-    error_log('SendAfrica error [' . $e->getErrorCode() . ']: ' . $e->getMessage());
+    // Any other error
+    error_log('SendAfrica [' . $e->getErrorCode() . ']: ' . $e->getMessage());
 }
 ```
 
 ---
 
-## Check Balance
+## API Reference
+
+### Auth Service
+
+| Method | Description |
+|--------|-------------|
+| `sendRegistrationOtp($phone)` | Send OTP for new user signup |
+| `sendLoginOtp($phone, $appName)` | Send OTP for two-factor login |
+| `sendPasswordResetOtp($phone)` | Send OTP for password reset |
+| `sendPhoneVerificationOtp($phone)` | Send OTP to verify a phone number |
+| `sendTransactionOtp($phone, $details)` | Send OTP for payment/order confirmation |
+| `sendCustomOtp($phone, $message)` | Send OTP with your own message (use `{{code}}` placeholder) |
+| `verify($entered, $expected)` | Simple OTP check |
+| `verifyWithExpiry($entered, $hash, $createdAt)` | OTP check with expiry validation |
+| `hash($otp)` | Hash an OTP for database storage |
+| `verifyHash($entered, $hash)` | Verify input against a stored hash |
+| `generate($length)` | Generate an OTP without sending |
+| `isExpired($createdAt, $expiryMinutes)` | Check if an OTP has expired |
+
+### SMS Service
+
+| Method | Description |
+|--------|-------------|
+| `send($to, $message, $from)` | Send a single SMS |
+| `sendBulk($to, $message, $from)` | Send to multiple recipients (max 100) |
+
+### Credits Service
+
+| Method | Description |
+|--------|-------------|
+| `getBalance()` | Get available credit count |
+| `balance()` | Get full balance details |
+| `history($page, $perPage)` | Get credit transaction history |
+| `packages()` | List available credit packages |
+
+### All auth methods default to 10-minute expiry
 
 ```php
-$credits = $client->getBalance();
-if ($credits < 10) {
-    // Alert your ops team
-    error_log("SendAfrica: Only {$credits} credits remaining");
-}
+$otp = $client->auth->sendRegistrationOtp($phone);
+// OTP expires in 10 minutes
+
+$result = $client->auth->verifyWithExpiry($code, $hash, $createdAt, expiryMinutes: 10);
 ```
 
 ---
 
 ## Phone Number Format
-
-All these formats are accepted:
 
 | Format | Example |
 |--------|---------|
@@ -443,31 +648,9 @@ All these formats are accepted:
 
 ---
 
-## Quick Reference
+## Help & Support
 
-| What you want to do | Code |
-|---------------------|------|
-| Send an SMS | `$client->send('0712345678', 'Hello')` |
-| Send with sender ID | `$client->sms->send('0712345678', 'Hello', 'MyBrand')` |
-| Send to many people | `$client->sms->sendBulk(['07...', '07...'], 'Hello')` |
-| Registration OTP | `$client->auth->sendRegistrationOtp('0712345678')` |
-| Login OTP | `$client->auth->sendLoginOtp('0712345678', 'MyApp')` |
-| Password reset OTP | `$client->auth->sendPasswordResetOtp('0712345678')` |
-| Phone verify OTP | `$client->auth->sendPhoneVerificationOtp('0712345678')` |
-| Transaction OTP | `$client->auth->sendTransactionOtp('0712345678', 'order #1234')` |
-| Custom message OTP | `$client->auth->sendCustomOtp('0712345678', 'Code: {{code}}')` |
-| Verify OTP | `$client->auth->verify($entered, $expected)` |
-| Verify with expiry | `$client->auth->verifyWithExpiry($entered, $hash, $createdAt)` |
-| Hash OTP | `$client->auth->hash($otp)` |
-| Verify against hash | `$client->auth->verifyHash($entered, $hash)` |
-| Generate OTP only | `$client->auth->generate(6)` |
-| Check balance | `$client->getBalance()` |
-
----
-
-## Need Help?
-
-- [SendAfrica Docs](https://docs.sendafrica.online)
+- [SendAfrica API Documentation](https://docs.sendafrica.online)
 - [SendAfrica Dashboard](https://app.sendafrica.online)
 - WhatsApp: +255 692 069 230
 
