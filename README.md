@@ -1,3 +1,5 @@
+Want the fully working sample code? Grab it here: https://github.com/mohamed-sinani/sendafrica-test-sdk
+
 # SendAfrica PHP SDK
 
 A complete SMS authentication system for PHP applications. Install it, add your API key, and you have registration verification, two-factor login, password reset, and phone verification — all working out of the box.
@@ -659,3 +661,7 @@ $result = $client->auth->verifyWithExpiry($code, $hash, $createdAt, expiryMinute
 ## License
 
 MIT
+
+---
+
+Want the fully working sample code? Grab it here: https://github.com/mohamed-sinani/sendafrica-test-sdk
