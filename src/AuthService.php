@@ -20,7 +20,7 @@ class AuthService
     }
 
     /**
-     * Send OTP for user registration / email verification.
+     * Send OTP for user registration verification.
      *
      * @return array{otp: string, message_id: string, status: string, credits_used: int, expires_in: int}
      */
