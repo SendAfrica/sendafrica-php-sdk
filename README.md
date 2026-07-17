@@ -1,6 +1,6 @@
 # SendAfrica PHP SDK
 
-Send SMS messages to Tanzania from your PHP app in minutes. This SDK wraps the [SendAfrica API](https://sendafrica.online) so you don't have to deal with HTTP requests, headers, or JSON parsing yourself.
+Send SMS messages from your PHP app in minutes. This SDK wraps the [SendAfrica API](https://sendafrica.online) so you don't have to deal with HTTP requests, headers, or JSON parsing yourself.
 
 ---
 
@@ -69,7 +69,7 @@ echo "Credits used: " . $result['credits_used'] . "\n";
 
 Replace:
 - `'paste-your-api-key-here'` with your actual API key
-- `'0712345678'` with a real Tanzania phone number
+- `'0712345678'` with a real phone number
 
 Run it:
 
@@ -323,14 +323,13 @@ try {
 
 ## Phone Number Rules
 
-Only **Tanzania mobile numbers** work. All these formats are accepted:
+All these formats are accepted:
 
 | You type | Example | It works? |
 |----------|---------|-----------|
 | Local format | `0712345678` | Yes |
 | With country code | `+255712345678` | Yes |
 | Without the + | `255712345678` | Yes |
-| Non-Tanzania | `+254712345678` | No |
 
 You don't need to worry about formatting — just give it the number and the API handles it.
 
