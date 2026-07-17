@@ -81,7 +81,7 @@ You should see:
 
 ```
 SMS sent!
-Message ID: ATXid_abc123...
+Message ID: SA-19bd8ee5-b843-49d8-ab16-ed4e04a96fcf
 Credits used: 1
 ```
 
