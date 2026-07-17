@@ -27,7 +27,6 @@ try {
     echo "  Message ID: {$result['message_id']}\n";
     echo "  Status: {$result['status']}\n";
     echo "  Credits used: {$result['credits_used']}\n";
-    echo "  Cost: {$result['cost']}\n";
 
 } catch (SendAfricaException $e) {
     echo "Error: " . $e->getMessage() . "\n";

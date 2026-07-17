@@ -19,7 +19,7 @@ class SmsService
      * @param string $to      Recipient phone number (e.g. "0712345678" or "+255712345678")
      * @param string $message The SMS text to send
      * @param string|null $from Optional sender ID (e.g. "MyBrand")
-     * @return array{message_id: string, status: string, cost: string, credits_used: int}
+     * @return array{message_id: string, status: string, credits_used: int}
      */
     public function send(string $to, string $message, ?string $from = null): array
     {
