@@ -11,14 +11,14 @@ namespace SendAfrica;
  *   $client = new SendAfrica\Client('your-api-key');
  *
  *   // Send SMS
- *   $result = $client->sms->send('0712345678', 'Hello from my app!');
+ *   $client->send('0712345678', 'Hello!');
  *
- *   // Send OTP
- *   $otp = $client->sms->sendOtp('0712345678');
- *   // Store $otp['otp'] in your database, verify later
+ *   // Full auth system
+ *   $otp = $client->auth->sendRegistrationOtp('0712345678');
+ *   $client->auth->verify($userInput, $otp['otp']);
  *
  *   // Check balance
- *   $balance = $client->credits->getBalance();
+ *   $credits = $client->getBalance();
  *
  * @see https://docs.sendafrica.online — Full API documentation
  */
@@ -26,6 +26,7 @@ class Client
 {
     public SmsService $sms;
     public CreditsService $credits;
+    public AuthService $auth;
 
     private HttpClient $http;
 
@@ -39,12 +40,11 @@ class Client
         $this->http = new HttpClient($apiKey, $baseUrl, $timeout);
         $this->sms = new SmsService($this->http);
         $this->credits = new CreditsService($this->http);
+        $this->auth = new AuthService($this->sms);
     }
 
     /**
      * Quick helper: send SMS in one line.
-     *
-     * @example $client->send('0712345678', 'Hello!');
      */
     public function send(string $to, string $message, ?string $from = null): array
     {
@@ -53,8 +53,6 @@ class Client
 
     /**
      * Quick helper: send OTP in one line.
-     *
-     * @example $otp = $client->sendOtp('0712345678');
      */
     public function sendOtp(string $to, int $length = 6, int $expiry = 10, ?string $from = null): array
     {
@@ -63,8 +61,6 @@ class Client
 
     /**
      * Quick helper: check balance in one line.
-     *
-     * @example $credits = $client->getBalance();
      */
     public function getBalance(): int
     {

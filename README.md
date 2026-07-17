@@ -1,6 +1,8 @@
 # SendAfrica PHP SDK
 
-Send SMS messages from your PHP app in minutes. This SDK wraps the [SendAfrica API](https://sendafrica.online) so you don't have to deal with HTTP requests, headers, or JSON parsing yourself.
+Complete SMS auth system for your PHP app. Send SMS, handle OTP verification, login, registration, password reset, and phone verification — all in a few lines of code.
+
+No need to build anything. Just install and use.
 
 ---
 
@@ -29,7 +31,7 @@ cd /path/to/your/php-project
 
 ## Step 2 — Install the SDK
 
-Run this one command in your terminal:
+Run this one command:
 
 ```bash
 composer require sendafrica/php-sdk
@@ -46,22 +48,16 @@ Create a file called `test-sms.php` and paste this code:
 ```php
 <?php
 
-// This line loads the SDK automatically
 require_once 'vendor/autoload.php';
 
-// Import the SendAfrica client
 use SendAfrica\Client;
 
 // Replace with YOUR API key from the dashboard
-$apiKey = 'paste-your-api-key-here';
-
-// Create the client
-$client = new Client($apiKey);
+$client = new Client('paste-your-api-key-here');
 
 // Send an SMS
 $result = $client->send('0712345678', 'Hello from my app!');
 
-// Print the result
 echo "SMS sent!\n";
 echo "Message ID: " . $result['message_id'] . "\n";
 echo "Credits used: " . $result['credits_used'] . "\n";
@@ -77,23 +73,15 @@ Run it:
 php test-sms.php
 ```
 
-You should see:
-
-```
-SMS sent!
-Message ID: SA-19bd8ee5-b843-49d8-ab16-ed4e04a96fcf
-Credits used: 1
-```
-
-And the phone receives the SMS. That's it, you're done.
+That's it — you're sending SMS.
 
 ---
 
-## Common Tasks
+## Complete Auth System
 
-### Send an SMS with a Sender ID
+The SDK includes a full auth service. No need to build OTP generation, messages, or verification yourself.
 
-A sender ID is the name that appears as the sender on the recipient's phone (e.g. "MyShop" instead of a random number).
+### Register a User (Phone Verification)
 
 ```php
 <?php
@@ -102,19 +90,19 @@ require_once 'vendor/autoload.php';
 use SendAfrica\Client;
 
 $client = new Client('YOUR_API_KEY');
+$phone = '0712345678';
 
-$result = $client->sms->send(
-    to: '0712345678',
-    message: 'Your order #1234 is confirmed!',
-    from: 'MyShop'
-);
+// Sends a 6-digit OTP to the user's phone
+$otp = $client->auth->sendRegistrationOtp($phone);
 
-echo "Sent! Message ID: " . $result['message_id'];
+// Save to your database (hash it, don't store plain text)
+$hash = $client->auth->hash($otp['otp']);
+// $db->query("INSERT INTO users (phone, otp, otp_created_at) VALUES (?, ?, NOW())", [$phone, $hash]);
+
+echo "Code sent to {$phone}!";
 ```
 
----
-
-### Send SMS to Multiple People at Once
+### Verify the Code They Entered
 
 ```php
 <?php
@@ -124,104 +112,87 @@ use SendAfrica\Client;
 
 $client = new Client('YOUR_API_KEY');
 
-$recipients = [
-    '0712345678',
-    '0754000111',
-    '0789012345',
-];
+$entered = $_POST['code']; // What the user typed
+$expectedHash = '$2y$10$...'; // From your database
+$createdAt = '2026-07-17 10:00:00'; // From your database
 
-$result = $client->sms->sendBulk(
-    to: $recipients,
-    message: 'Flash sale! 50% off everything today.',
-    from: 'MyShop'
-);
+$result = $client->auth->verifyWithExpiry($entered, $expectedHash, $createdAt, expiryMinutes: 10);
 
-echo "Total: " . $result['total'] . "\n";
-echo "Sent: " . $result['sent'] . "\n";
-echo "Failed: " . $result['failed'] . "\n";
-```
-
----
-
-### OTP Verification (Step by Step)
-
-OTP means "One-Time Password" — a short code sent to the user's phone to verify they own that number. Here's the full flow:
-
-#### Step A — Send the OTP when the user clicks "Verify"
-
-```php
-<?php
-// send-otp.php
-require_once 'vendor/autoload.php';
-
-use SendAfrica\Client;
-
-$client = new Client('YOUR_API_KEY');
-
-$phone = $_POST['phone']; // e.g. "0712345678"
-
-// This sends a 6-digit code via SMS
-$otp = $client->sms->sendOtp($phone);
-
-// Store the code in your database so you can check it later
-// In real code, save $otp['otp'] to your database with the user's ID
-saveToDatabase($otp['otp']);
-
-echo "Code sent to your phone!";
-```
-
-#### Step B — Verify the code the user entered
-
-```php
-<?php
-// verify-otp.php
-require_once 'vendor/autoload.php';
-
-use SendAfrica\Client;
-
-$client = new Client('YOUR_API_KEY');
-
-$phone = $_POST['phone'];
-$code  = $_POST['code']; // What the user typed in
-
-// Get the stored code from your database
-$storedCode = getFromDatabase($phone);
-
-// Check if it matches
-if ($client->sms->verifyOtp($code, $storedCode)) {
+if ($result['valid']) {
     echo "Phone verified!";
-
-    // Mark the phone as verified in your database
-    markPhoneAsVerified($phone);
+    // Mark as verified in your database
 } else {
-    echo "Wrong code. Please try again.";
+    echo $result['message']; // "OTP has expired" or "Invalid code"
 }
 ```
 
-#### The HTML form for the user
-
-```html
-<!-- verify-form.html -->
-<form method="POST" action="verify-otp.php">
-    <input type="text" name="phone" placeholder="0712345678" required>
-    <input type="text" name="code" placeholder="Enter 6-digit code" required>
-    <button type="submit">Verify</button>
-</form>
-```
-
-#### Customize the OTP
+### Login (Two-Factor Auth)
 
 ```php
-// 4-digit code (e.g. for simple apps)
-$otp = $client->sms->sendOtp('0712345678', length: 4);
+<?php
+require_once 'vendor/autoload.php';
 
-// 8-digit code that expires in 15 minutes
-$otp = $client->sms->sendOtp('0712345678', length: 8, expiry: 15);
+use SendAfrica\Client;
+
+$client = new Client('YOUR_API_KEY');
+$phone = '0712345678';
+
+// Send login code
+$otp = $client->auth->sendLoginOtp($phone, appName: 'MyShop');
+
+// Save hash to DB, then verify when user enters it
+$hash = $client->auth->hash($otp['otp']);
 ```
 
----
+### Forgot Password
 
-### Check Your Credit Balance
+```php
+<?php
+require_once 'vendor/autoload.php';
+
+use SendAfrica\Client;
+
+$client = new Client('YOUR_API_KEY');
+$phone = '0712345678';
+
+// Send password reset code
+$otp = $client->auth->sendPasswordResetOtp($phone);
+
+// Save hash to DB, verify when user enters it, then let them set new password
+$hash = $client->auth->hash($otp['otp']);
+```
+
+### Verify Phone Number
+
+```php
+<?php
+require_once 'vendor/autoload.php';
+
+use SendAfrica\Client;
+
+$client = new Client('YOUR_API_KEY');
+$phone = '0712345678';
+
+// Sends a 4-digit code (shorter for phone verification)
+$otp = $client->auth->sendPhoneVerificationOtp($phone, length: 4);
+```
+
+### Transaction / Order Confirmation
+
+```php
+<?php
+require_once 'vendor/autoload.php';
+
+use SendAfrica\Client;
+
+$client = new Client('YOUR_API_KEY');
+$phone = '0712345678';
+
+// Send confirmation code for a payment or order
+$otp = $client->auth->sendTransactionOtp($phone, details: 'order #1234');
+```
+
+### Custom Message
 
 ```php
 <?php
@@ -231,55 +202,66 @@ use SendAfrica\Client;
 
 $client = new Client('YOUR_API_KEY');
 
-// Quick way — returns just the number
+// Write your own message — use {{code}} where the OTP goes
+$otp = $client->auth->sendCustomOtp(
+    to: '0712345678',
+    message: 'Hey! Your MyShop code is {{code}}. Expires in 5 min.',
+    length: 6,
+    expiry: 5
+);
+```
+
+### Simple Verify (Without Expiry Check)
+
+```php
+// Just check if the code matches — no expiry logic
+if ($client->auth->verify($userInput, $storedOtp)) {
+    echo "Correct!";
+} else {
+    echo "Wrong code.";
+}
+```
+
+---
+
+## Send SMS (Raw)
+
+If you just want to send a message without auth features:
+
+```php
+<?php
+require_once 'vendor/autoload.php';
+
+use SendAfrica\Client;
+
+$client = new Client('YOUR_API_KEY');
+
+// Simple send
+$client->send('0712345678', 'Your order is confirmed!');
+
+// With sender ID
+$client->sms->send('0712345678', 'Hello!', 'MyBrand');
+
+// Send to many people at once
+$client->sms->sendBulk(
+    to: ['0712345678', '0754000111', '0789012345'],
+    message: 'Flash sale today!',
+    from: 'MyShop'
+);
+```
+
+---
+
+## Check Balance
+
+```php
 $credits = $client->getBalance();
 echo "You have {$credits} credits left.";
 ```
 
 ---
 
-### See Your Credit History
-
-```php
-<?php
-require_once 'vendor/autoload.php';
-
-use SendAfrica\Client;
-
-$client = new Client('YOUR_API_KEY');
-
-$history = $client->credits->history(page: 1, perPage: 10);
-
-foreach ($history['items'] as $tx) {
-    echo $tx['description'] . ': ' . $tx['amount'] . " credits\n";
-}
-```
-
----
-
-### See Available Credit Packages
-
-```php
-<?php
-require_once 'vendor/autoload.php';
-
-use SendAfrica\Client;
-
-$client = new Client('YOUR_API_KEY');
-
-$packages = $client->credits->packages();
-
-foreach ($packages as $pkg) {
-    echo $pkg['name'] . ': ' . $pkg['credits'] . ' credits for '
-         . $pkg['currency'] . ' ' . number_format($pkg['price']) . "\n";
-}
-```
-
----
-
-## Handling Errors
-
-Things can go wrong — wrong API key, not enough credits, bad phone number. Here's how to handle each case:
+## Error Handling
 
 ```php
 <?php
@@ -296,26 +278,182 @@ $client = new Client('YOUR_API_KEY');
 
 try {
     $client->send('0712345678', 'Hello!');
-
 } catch (AuthenticationException $e) {
-    // Wrong API key
-    echo "Error: Invalid API key. Check your dashboard settings.";
-
+    echo "Invalid API key.";
 } catch (InsufficientCreditsException $e) {
-    // Ran out of credits
-    echo "Error: Not enough credits. Buy more at app.sendafrica.online";
-
+    echo "Not enough credits.";
 } catch (RateLimitException $e) {
-    // Sending too fast
-    echo "Error: Too many requests. Wait a moment and try again.";
-
+    echo "Too many requests. Slow down.";
 } catch (ValidationException $e) {
-    // Bad input (wrong phone number format, missing message, etc.)
     echo "Error: " . $e->getMessage();
-
 } catch (SendAfricaException $e) {
-    // Any other error
-    echo "Error [" . $e->getErrorCode() . "]: " . $e->getMessage();
+    echo "Error: " . $e->getMessage();
+}
+```
+
+---
+
+## Full Auth Flow Example
+
+Here's a complete registration + login system in 3 files:
+
+### File structure
+
+```
+my-project/
+├── composer.json
+├── config.php
+├── register.php
+├── verify.php
+├── login.php
+├── login-verify.php
+├── forgot-password.php
+└── reset-password.php
+```
+
+### config.php
+
+```php
+<?php
+return [
+    'sendafrica_api_key' => 'YOUR_API_KEY_HERE',
+];
+```
+
+### register.php
+
+```php
+<?php
+require_once 'vendor/autoload.php';
+$config = require 'config.php';
+$client = new \SendAfrica\Client($config['sendafrica_api_key']);
+
+$phone = $_POST['phone'] ?? '';
+$name  = $_POST['name'] ?? '';
+
+if (empty($phone) || empty($name)) {
+    die('All fields required.');
+}
+
+$otp = $client->auth->sendRegistrationOtp($phone);
+
+// TODO: Save to database
+// $hash = $client->auth->hash($otp['otp']);
+// $db->query("INSERT INTO users (phone, name, otp_hash, otp_created_at) VALUES (?, ?, ?, NOW())", [$phone, $name, $hash]);
+
+echo "Code sent to {$phone}! Check your phone.";
+```
+
+### verify.php
+
+```php
+<?php
+require_once 'vendor/autoload.php';
+$config = require 'config.php';
+$client = new \SendAfrica\Client($config['sendafrica_api_key']);
+
+$phone = $_POST['phone'] ?? '';
+$code  = $_POST['code'] ?? '';
+
+// TODO: Get from database
+// $row = $db->query("SELECT otp_hash, otp_created_at FROM users WHERE phone = ?", [$phone])->fetch();
+$storedHash = '$2y$10$...'; // from DB
+$createdAt  = '2026-07-17 10:00:00'; // from DB
+
+$result = $client->auth->verifyWithExpiry($code, $storedHash, $createdAt, expiryMinutes: 10);
+
+if ($result['valid']) {
+    // TODO: Mark phone as verified, clear OTP from DB
+    echo "Registration complete!";
+} else {
+    echo $result['message'];
+}
+```
+
+### login.php
+
+```php
+<?php
+require_once 'vendor/autoload.php';
+$config = require 'config.php';
+$client = new \SendAfrica\Client($config['sendafrica_api_key']);
+
+$phone = $_POST['phone'] ?? '';
+
+// TODO: Check if user exists, get password, verify it, then:
+$otp = $client->auth->sendLoginOtp($phone, appName: 'MyApp');
+
+// TODO: Save hash to DB
+echo "Login code sent to {$phone}!";
+```
+
+### login-verify.php
+
+```php
+<?php
+require_once 'vendor/autoload.php';
+$config = require 'config.php';
+$client = new \SendAfrica\Client($config['sendafrica_api_key']);
+
+$phone = $_POST['phone'] ?? '';
+$code  = $_POST['code'] ?? '';
+
+// TODO: Get hash and created_at from DB
+$storedHash = '$2y$10$...';
+$createdAt  = '2026-07-17 10:00:00';
+
+$result = $client->auth->verifyWithExpiry($code, $storedHash, $createdAt, expiryMinutes: 5);
+
+if ($result['valid']) {
+    // TODO: Create session, log user in
+    session_start();
+    $_SESSION['user_id'] = 123; // from DB
+    echo "Welcome back!";
+} else {
+    echo $result['message'];
+}
+```
+
+### forgot-password.php
+
+```php
+<?php
+require_once 'vendor/autoload.php';
+$config = require 'config.php';
+$client = new \SendAfrica\Client($config['sendafrica_api_key']);
+
+$phone = $_POST['phone'] ?? '';
+
+// TODO: Check if user exists
+$otp = $client->auth->sendPasswordResetOtp($phone);
+
+// TODO: Save hash to DB
+echo "Reset code sent to {$phone}!";
+```
+
+### reset-password.php
+
+```php
+<?php
+require_once 'vendor/autoload.php';
+$config = require 'config.php';
+$client = new \SendAfrica\Client($config['sendafrica_api_key']);
+
+$phone       = $_POST['phone'] ?? '';
+$code        = $_POST['code'] ?? '';
+$newPassword = $_POST['new_password'] ?? '';
+
+// TODO: Get hash and created_at from DB
+$storedHash = '$2y$10$...';
+$createdAt  = '2026-07-17 10:00:00';
+
+$result = $client->auth->verifyWithExpiry($code, $storedHash, $createdAt, expiryMinutes: 10);
+
+if ($result['valid']) {
+    // TODO: Update password in DB, clear OTP
+    echo "Password updated!";
+} else {
+    echo $result['message'];
 }
 ```
 
@@ -335,95 +473,6 @@ You don't need to worry about formatting — just give it the number and the API
 
 ---
 
-## Full Project Example
-
-Here's a complete, real-world example. Create these files in your project:
-
-### File structure
-
-```
-my-project/
-├── composer.json
-├── config.php
-├── send-otp.php
-├── verify-otp.php
-└── vendor/              <-- created by composer
-```
-
-### config.php
-
-```php
-<?php
-// Put your API key here. Never commit this file to git!
-return [
-    'sendafrica_api_key' => 'YOUR_API_KEY_HERE',
-];
-```
-
-### send-otp.php
-
-```php
-<?php
-require_once 'vendor/autoload.php';
-require_once 'config.php';
-
-use SendAfrica\Client;
-
-$config = require 'config.php';
-$client = new Client($config['sendafrica_api_key']);
-
-$phone = $_POST['phone'] ?? '';
-
-if (empty($phone)) {
-    die('Phone number is required.');
-}
-
-try {
-    $otp = $client->sms->sendOtp($phone, length: 6, expiry: 10);
-
-    // TODO: Save $otp['otp'] to your database
-    // Example: $db->query("UPDATE users SET otp = '{$otp['otp']}' WHERE phone = ?", [$phone]);
-
-    echo json_encode(['success' => true, 'message' => 'Code sent!']);
-} catch (Exception $e) {
-    echo json_encode(['success' => false, 'message' => $e->getMessage()]);
-}
-```
-
-### verify-otp.php
-
-```php
-<?php
-require_once 'vendor/autoload.php';
-require_once 'config.php';
-
-use SendAfrica\Client;
-
-$config = require 'config.php';
-$client = new Client($config['sendafrica_api_key']);
-
-$phone = $_POST['phone'] ?? '';
-$code  = $_POST['code'] ?? '';
-
-if (empty($phone) || empty($code)) {
-    die('Phone and code are required.');
-}
-
-// TODO: Get the stored OTP from your database
-// Example: $row = $db->query("SELECT otp FROM users WHERE phone = ?", [$phone])->fetch();
-// $storedCode = $row['otp'];
-$storedCode = '123456'; // Replace with real DB lookup
-
-if ($client->sms->verifyOtp($code, $storedCode)) {
-    // TODO: Mark phone as verified in your database
-    echo 'Phone verified!';
-} else {
-    echo 'Invalid code. Try again.';
-}
-```
-
----
-
 ## Quick Reference
 
 | What you want to do | Code |
@@ -431,11 +480,21 @@ if ($client->sms->verifyOtp($code, $storedCode)) {
 | Send an SMS | `$client->send('0712345678', 'Hello')` |
 | Send SMS with sender ID | `$client->sms->send('0712345678', 'Hello', 'MyBrand')` |
 | Send SMS to many people | `$client->sms->sendBulk(['07...', '07...'], 'Hello')` |
-| Send an OTP | `$client->sendOtp('0712345678')` |
-| Verify an OTP | `$client->sms->verifyOtp($userInput, $storedCode)` |
+| Registration OTP | `$client->auth->sendRegistrationOtp('0712345678')` |
+| Login OTP | `$client->auth->sendLoginOtp('0712345678', 'MyApp')` |
+| Password reset OTP | `$client->auth->sendPasswordResetOtp('0712345678')` |
+| Phone verify OTP | `$client->auth->sendPhoneVerificationOtp('0712345678')` |
+| Transaction OTP | `$client->auth->sendTransactionOtp('0712345678', 'order #1234')` |
+| Custom message OTP | `$client->auth->sendCustomOtp('0712345678', 'Your code is {{code}}')` |
+| Verify OTP | `$client->auth->verify($entered, $expected)` |
+| Verify with expiry | `$client->auth->verifyWithExpiry($entered, $hash, $createdAt)` |
+| Hash OTP for storage | `$client->auth->hash($otp)` |
+| Verify against hash | `$client->auth->verifyHash($entered, $hash)` |
+| Generate OTP only | `$client->auth->generate(6)` |
+| Check if expired | `$client->auth->isExpired($createdAt, expiryMinutes: 10)` |
 | Check balance | `$client->getBalance()` |
-| See credit history | `$client->credits->history()` |
-| See credit packages | `$client->credits->packages()` |
+| Credit history | `$client->credits->history()` |
+| Credit packages | `$client->credits->packages()` |
 
 ---
 
