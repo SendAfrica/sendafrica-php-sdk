@@ -42,7 +42,7 @@ class AuthService
      *
      * @return array{otp: string, message_id: string, status: string, credits_used: int, expires_in: int}
      */
-    public function sendLoginOtp(string $to, string $appName = '', int $length = 6, int $expiry = 5, ?string $from = null): array
+    public function sendLoginOtp(string $to, string $appName = '', int $length = 6, int $expiry = 10, ?string $from = null): array
     {
         $otp = $this->generate($length);
         $prefix = $appName ? "Your {$appName}" : "Your";
@@ -97,7 +97,7 @@ class AuthService
      *
      * @return array{otp: string, message_id: string, status: string, credits_used: int, expires_in: int}
      */
-    public function sendTransactionOtp(string $to, string $details = '', int $length = 6, int $expiry = 5, ?string $from = null): array
+    public function sendTransactionOtp(string $to, string $details = '', int $length = 6, int $expiry = 10, ?string $from = null): array
     {
         $otp = $this->generate($length);
         $prefix = $details ? "Confirm {$details}" : "Confirm your transaction";
