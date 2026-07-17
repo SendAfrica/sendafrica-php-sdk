@@ -1,0 +1,36 @@
+{
+    "name": "sendafrica/php-sdk",
+    "description": "Official PHP SDK for the SendAfrica SMS API — send SMS, check balance, manage payments in Tanzania.",
+    "type": "library",
+    "license": "MIT",
+    "keywords": ["sms", "africa", "tanzania", "sendafrica", "messaging", "otp"],
+    "authors": [
+        {
+            "name": "SendAfrica",
+            "email": "hello@sendafrica.online",
+            "url": "https://sendafrica.online"
+        }
+    ],
+    "require": {
+        "php": ">=7.4",
+        "ext-curl": "*",
+        "ext-json": "*"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^9.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "SendAfrica\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "SendAfrica\\Tests\\": "tests/"
+        }
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "minimum-stability": "stable"
+}
