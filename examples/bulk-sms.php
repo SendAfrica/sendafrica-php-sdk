@@ -1,45 +1,26 @@
 <?php
 /**
- * SendAfrica PHP SDK — Bulk SMS Example
- *
- * Send the same message to multiple recipients at once (max 100).
+ * Send bulk SMS with partial failure handling.
  */
 
 require_once __DIR__ . '/../vendor/autoload.php';
 
-use SendAfrica\Client;
-use SendAfrica\Exception\InsufficientCreditsException;
-use SendAfrica\Exception\SendAfricaException;
+use SendAfrica\SendAfrica;
 
-$client = new Client('YOUR_API_KEY_HERE');
+$client = new SendAfrica();
 
-$recipients = [
-    '0712345678',
-    '0754000111',
-    '0789012345',
-    '0767890123',
-];
+$results = $client->sms->sendMany(
+    messages: [
+        ['to' => '0711111111', 'message' => 'Hello John'],
+        ['to' => '0722222222', 'message' => 'Hello Mary'],
+        ['to' => '+255733333333', 'message' => 'Hello Alex'],
+    ],
+    sender: 'MyBrand'
+);
 
-try {
-    $result = $client->sms->sendBulk(
-        to: $recipients,
-        message: 'Flash sale! 50% off everything today only.',
-        from: 'MyShop'
-    );
+echo "Sent: {$results->getSentCount()}\n";
+echo "Failed: {$results->getFailedCount()}\n";
 
-    echo "Bulk SMS Results:\n";
-    echo "  Total: {$result['total']}\n";
-    echo "  Sent: {$result['sent']}\n";
-    echo "  Failed: {$result['failed']}\n";
-
-    // Check individual results
-    foreach ($result['results'] as $r) {
-        $status = $r['status'] === 'sent' ? '✓' : '✗';
-        echo "  {$status} {$r['to']} — {$r['status']}\n";
-    }
-
-} catch (InsufficientCreditsException $e) {
-    echo "Not enough credits! Top up at https://app.sendafrica.online\n";
-} catch (SendAfricaException $e) {
-    echo "Error: " . $e->getMessage() . "\n";
+foreach ($results->failed as $failure) {
+    echo "  [{$failure['index']}] {$failure['to']}: {$failure['error']}\n";
 }

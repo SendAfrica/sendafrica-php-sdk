@@ -1,9 +1,9 @@
 {
     "name": "sendafrica/php-sdk",
-    "description": "Official PHP SDK for the SendAfrica SMS API — send SMS, check balance, and manage your account.",
+    "description": "Official PHP client for the SendAfrica SMS Infrastructure-as-a-Service API.",
     "type": "library",
     "license": "MIT",
-    "keywords": ["sms", "africa", "sendafrica", "messaging", "otp"],
+    "keywords": ["sms", "africa", "sendafrica", "messaging", "otp", "sms-api"],
     "authors": [
         {
             "name": "SendAfrica",
@@ -29,8 +29,12 @@
             "SendAfrica\\Tests\\": "tests/"
         }
     },
+    "bin": [
+        "bin/sendafrica"
+    ],
     "config": {
-        "sort-packages": true
+        "sort-packages": true,
+        "bin-dir": "vendor/bin"
     },
     "minimum-stability": "stable"
 }

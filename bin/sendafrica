@@ -1,0 +1,62 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+require_once __DIR__ . '/../vendor/autoload.php';
+
+use SendAfrica\SendAfrica;
+use SendAfrica\Exceptions\SendAfricaException;
+
+$apiKey = getenv('SENDAFRICA_API_KEY') ?: null;
+
+if ($apiKey === null || $apiKey === '') {
+    fwrite(STDERR, "Error: Set the SENDAFRICA_API_KEY environment variable.\n");
+    fwrite(STDERR, "  export SENDAFRICA_API_KEY=\"SA-xxxxx\"\n");
+    exit(1);
+}
+
+$client = new SendAfrica($apiKey);
+
+$command = $argv[1] ?? '';
+
+switch ($command) {
+    case 'balance':
+        $balance = $client->credits->balance();
+        echo "Credits: {$balance->balance}\n";
+        break;
+
+    case 'sms':
+        $subCommand = $argv[2] ?? '';
+        if ($subCommand === 'send') {
+            $to = getopt('', ['to::', 'message::', 'sender::']);
+            $phone = $to['to'] ?? '';
+            $message = $to['message'] ?? '';
+            $sender = $to['sender'] ?? null;
+
+            if ($phone === '' || $message === '') {
+                fwrite(STDERR, "Usage: sendafrica sms send --to 0712345678 --message \"Hello\" [--sender MyBrand]\n");
+                exit(1);
+            }
+
+            $result = $client->sms->send($phone, $message, $sender);
+            echo "Sent: {$result->messageId} (status={$result->status}, credits={$result->creditsUsed})\n";
+        } else {
+            fwrite(STDERR, "Usage: sendafrica sms send --to 0712345678 --message \"Hello\"\n");
+            exit(1);
+        }
+        break;
+
+    case 'help':
+    case '--help':
+    case '-h':
+    default:
+        echo "SendAfrica CLI\n\n";
+        echo "Usage:\n";
+        echo "  sendafrica balance                          Check credit balance\n";
+        echo "  sendafrica sms send --to PHONE --message MSG  Send an SMS\n";
+        echo "\n";
+        echo "Environment:\n";
+        echo "  SENDAFRICA_API_KEY   Your API key (required)\n";
+        break;
+}

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace SendAfrica\Exception;
+namespace SendAfrica\Exceptions;
 
 class ValidationException extends SendAfricaException
 {

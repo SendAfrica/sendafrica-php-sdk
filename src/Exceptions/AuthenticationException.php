@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace SendAfrica\Exception;
+namespace SendAfrica\Exceptions;
 
 class AuthenticationException extends SendAfricaException
 {
     public function __construct(string $message = 'Invalid or missing API key', ?string $requestId = null)
     {
-        parent::__construct($message, 'unauthorized', $requestId, 401);
+        parent::__construct($message, 'authentication_error', $requestId, 401);
     }
 }
