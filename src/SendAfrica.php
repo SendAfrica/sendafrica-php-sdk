@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SendAfrica;
 
 use SendAfrica\Exceptions\AuthenticationException;
+use SendAfrica\Resources\AuthResource;
 use SendAfrica\Resources\CreditsResource;
 use SendAfrica\Resources\PaymentsResource;
 use SendAfrica\Resources\SmsResource;
@@ -16,6 +17,7 @@ class SendAfrica
     public CreditsResource $credits;
     public PaymentsResource $payments;
     public WebhooksResource $webhooks;
+    public AuthResource $auth;
     public string $environment;
 
     private HttpClient $http;
@@ -53,5 +55,6 @@ class SendAfrica
         $this->credits = new CreditsResource($this->http);
         $this->payments = new PaymentsResource($this->http);
         $this->webhooks = new WebhooksResource($webhookSecret);
+        $this->auth = new AuthResource($this->sms);
     }
 }

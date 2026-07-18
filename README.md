@@ -20,6 +20,9 @@ simple for a first integration, enough control for production use.
   `255712345678` and it all works. The SDK handles the conversion.
 - **SMS cost estimation** -- `$client->sms->analyze()` tells you encoding
   (GSM-7 vs UCS-2), segment count, and credit cost with zero network calls.
+- **Full auth system** -- `$client->auth` gives you registration OTP,
+  login OTP, password reset, phone verification, transaction OTP, and
+  custom OTP flows with built-in hashing and expiry verification.
 - **Stripe-like error hierarchy** -- every error inherits from
   `SendAfricaException`. Catch the base class or get specific with
   `InsufficientCreditsException`, `RateLimitException`, etc.
@@ -114,6 +117,7 @@ $client = new SendAfrica(
 | Resource | Methods |
 |---|---|
 | `$client->sms` | `send`, `sendMany`, `analyze` |
+| `$client->auth` | `sendRegistrationOtp`, `sendLoginOtp`, `sendPasswordResetOtp`, `sendPhoneVerificationOtp`, `sendTransactionOtp`, `sendCustomOtp`, `verify`, `verifyWithExpiry`, `generate`, `hash`, `verifyHash`, `isExpired` |
 | `$client->credits` | `balance`, `history` |
 | `$client->payments` | `create`, `rate` |
 | `$client->webhooks` | `parse` |
@@ -229,6 +233,124 @@ Segmentation rules:
 
 > **Note:** `credits` is an estimate for UI display. The authoritative
 > number is `creditsUsed` on the `SmsResult` from `$client->sms->send()`.
+
+### Auth
+
+The `$client->auth` resource provides a complete SMS-based auth system out
+of the box. OTP generation, message templates, hashing, and expiry
+verification -- all built in.
+
+#### `$client->auth->sendRegistrationOtp(to, length: 6, expiry: 10, sender: null)`
+
+Send OTP for new user signup.
+
+```php
+$otp = $client->auth->sendRegistrationOtp(to: '0712345678');
+
+echo $otp['otp'];         // "482916" -- the code sent
+echo $otp['message_id'];  // server-assigned ID
+echo $otp['credits_used']; // 1
+echo $otp['expires_in'];  // 600 (seconds)
+
+// In your app: hash and store in your database
+$hash = $client->auth->hash($otp['otp']);
+// INSERT INTO users (phone, otp_hash, otp_created_at) VALUES (?, ?, NOW())
+```
+
+**Returns:** `array{otp: string, message_id: string, status: string, credits_used: int, expires_in: int}`
+
+#### `$client->auth->sendLoginOtp(to, appName: '', length: 6, expiry: 5, sender: null)`
+
+Send OTP for two-factor login.
+
+```php
+$otp = $client->auth->sendLoginOtp(to: '0712345678', appName: 'MyApp');
+// Message: "Your MyApp login code is 482916. Valid for 5 minutes..."
+```
+
+#### `$client->auth->sendPasswordResetOtp(to, length: 6, expiry: 10, sender: null)`
+
+Send OTP for password reset.
+
+```php
+$otp = $client->auth->sendPasswordResetOtp(to: '0712345678');
+// Message: "Your password reset code is 482916. Valid for 10 minutes..."
+```
+
+#### `$client->auth->sendPhoneVerificationOtp(to, length: 4, expiry: 10, sender: null)`
+
+Send OTP to verify a phone number. Default length is 4 digits.
+
+```php
+$otp = $client->auth->sendPhoneVerificationOtp(to: '0712345678', length: 4);
+```
+
+#### `$client->auth->sendTransactionOtp(to, details: '', length: 6, expiry: 5, sender: null)`
+
+Send OTP for order/payment confirmation.
+
+```php
+$otp = $client->auth->sendTransactionOtp(to: '0712345678', details: 'order #1234');
+// Message: "Confirm order #1234 with code 482916..."
+```
+
+#### `$client->auth->sendCustomOtp(to, message, length: 6, expiry: 10, sender: null)`
+
+Send OTP with your own message template. Use `{{code}}` as placeholder.
+
+```php
+$otp = $client->auth->sendCustomOtp(
+    to: '0712345678',
+    message: 'Use {{code}} to verify your account on MyApp. Expires in 10 min.'
+);
+```
+
+#### `$client->auth->verify(entered, expected)`
+
+Simple OTP check. Returns `true` if codes match.
+
+```php
+if ($client->auth->verify($userInput, $otpCode)) {
+    // correct
+}
+```
+
+#### `$client->auth->verifyWithExpiry(entered, expectedHash, createdAt, expiryMinutes: 10)`
+
+Verify an OTP with expiry check. Use this for production.
+
+```php
+$result = $client->auth->verifyWithExpiry(
+    entered: $userInput,
+    expectedHash: $storedHash,  // from password_hash()
+    createdAt: '2026-07-18T12:00:00',
+    expiryMinutes: 10
+);
+
+if ($result['valid']) {
+    // OTP correct and not expired
+} else {
+    echo $result['message']; // "OTP has expired" or "Invalid code"
+}
+```
+
+**Returns:** `array{valid: bool, expired: bool, message: string}`
+
+#### `$client->auth->generate(length: 6)`
+
+Generate a numeric OTP without sending it.
+
+#### `$client->auth->hash(otp)`
+
+Hash an OTP for secure database storage (uses `password_hash()`).
+
+#### `$client->auth->verifyHash(entered, hash)`
+
+Verify user input against a stored hash (uses `password_verify()`).
+
+#### `$client->auth->isExpired(createdAt, expiryMinutes: 10)`
+
+Check if an OTP has expired without verifying it.
 
 ### Credits
 
@@ -645,6 +767,7 @@ src/
 │   └── WebhookSignatureException.php   # HMAC mismatch
 ├── Resources/
 │   ├── SmsResource.php          # send, sendMany, analyze
+│   ├── AuthResource.php         # OTP generation, sending, hashing, verification
 │   ├── CreditsResource.php      # balance, history
 │   ├── PaymentsResource.php     # create, rate
 │   └── WebhooksResource.php     # parse
