@@ -33,10 +33,10 @@ class SmsResource
         ];
 
         if ($sender !== null) {
-            $payload['sender'] = $sender;
+            $payload['from'] = $sender;
         }
 
-        $response = $this->http->post('/sms/', $payload);
+        $response = $this->http->post('/sms', $payload);
         $data = $response['data'] ?? $response;
 
         return new SmsResult(array_merge($data, ['to' => $normalized]));

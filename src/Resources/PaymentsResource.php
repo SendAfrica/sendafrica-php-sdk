@@ -35,7 +35,7 @@ class PaymentsResource
             $payload['phone'] = $phone;
         }
 
-        $response = $this->http->post('/payments/', $payload);
+        $response = $this->http->post('/vouchers', $payload);
         return new Payment($response['data'] ?? $response);
     }
 
@@ -45,7 +45,7 @@ class PaymentsResource
      */
     public function rate(): VoucherRate
     {
-        $response = $this->http->get('/payments/rate');
+        $response = $this->http->get('/vouchers/rate');
         return new VoucherRate($response['data'] ?? $response);
     }
 }
