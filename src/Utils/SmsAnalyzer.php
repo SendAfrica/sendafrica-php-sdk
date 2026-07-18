@@ -23,6 +23,9 @@ class SmsAnalyzer
     private const UCS2_SINGLE_LIMIT = 70;
     private const UCS2_CONCAT_LIMIT = 67;
 
+    /** @var string[]|null Cached character array for GSM-7 basic set */
+    private static ?array $gsm7Chars = null;
+
     /**
      * Analyze an SMS message for encoding, segment count, and credit cost.
      */
@@ -59,8 +62,12 @@ class SmsAnalyzer
      */
     public static function isGsm7(array $chars): bool
     {
+        if (self::$gsm7Chars === null) {
+            self::$gsm7Chars = str_split(self::GSM7_BASIC);
+        }
+
         foreach ($chars as $char) {
-            if (!in_array($char, str_split(self::GSM7_BASIC), true)
+            if (!in_array($char, self::$gsm7Chars, true)
                 && !self::isGsm7Extended($char)
                 && $char !== "\n") {
                 return false;

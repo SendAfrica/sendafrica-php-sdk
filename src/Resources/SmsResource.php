@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace SendAfrica\Resources;
 
-use SendAfrica\Exceptions\InvalidPhoneException;
 use SendAfrica\HttpClient;
 use SendAfrica\Models\BulkSmsResult;
 use SendAfrica\Models\SmsAnalysis;

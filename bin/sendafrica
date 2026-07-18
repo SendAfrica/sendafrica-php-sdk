@@ -29,7 +29,7 @@ switch ($command) {
     case 'sms':
         $subCommand = $argv[2] ?? '';
         if ($subCommand === 'send') {
-            $to = getopt('', ['to::', 'message::', 'sender::']);
+            $to = getopt('', ['to:', 'message:', 'sender::']);
             $phone = $to['to'] ?? '';
             $message = $to['message'] ?? '';
             $sender = $to['sender'] ?? null;

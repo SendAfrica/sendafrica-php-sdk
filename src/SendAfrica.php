@@ -16,6 +16,7 @@ class SendAfrica
     public CreditsResource $credits;
     public PaymentsResource $payments;
     public WebhooksResource $webhooks;
+    public string $environment;
 
     private HttpClient $http;
 
@@ -46,6 +47,7 @@ class SendAfrica
         }
 
         $this->http = new HttpClient($resolvedKey, $baseUrl, $timeout, $maxRetries, $debug);
+        $this->environment = $environment;
 
         $this->sms = new SmsResource($this->http);
         $this->credits = new CreditsResource($this->http);

@@ -112,6 +112,8 @@ class HttpClient
             'X-Request-Id: ' . $requestId,
         ];
 
+        $responseHeaders = [];
+
         $ch = curl_init();
         curl_setopt_array($ch, [
             CURLOPT_URL => $url,
@@ -119,6 +121,7 @@ class HttpClient
             CURLOPT_HTTPHEADER => $headers,
             CURLOPT_TIMEOUT => $this->timeout,
             CURLOPT_CONNECTTIMEOUT => 10,
+            CURLOPT_HEADER => true,
         ]);
 
         switch ($method) {
@@ -146,32 +149,31 @@ class HttpClient
         }
 
         $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $responseHeaders = curl_getinfo($ch, CURLINFO_HEADER_OUT);
-        $allHeaders = $this->parseResponseHeaders($ch);
+        $headerSize = (int) curl_getinfo($ch, CURLINFO_HEADER_SIZE);
         curl_close($ch);
+
+        if ($headerSize > 0 && strlen($responseBody) > $headerSize) {
+            $rawHeaders = substr($responseBody, 0, $headerSize);
+            $responseBody = substr($responseBody, $headerSize);
+            $responseHeaders = $this->parseResponseHeaders($rawHeaders);
+        }
 
         return [
             'body' => $responseBody,
             'http_code' => $httpCode,
-            'headers' => $allHeaders,
+            'headers' => $responseHeaders,
         ];
     }
 
-    private function parseResponseHeaders($ch): array
+    private function parseResponseHeaders(string $rawHeaders): array
     {
-        $headerSize = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
-        $rawHeaders = curl_getinfo($ch, CURLINFO_HEADER_OUT);
-
         $headers = [];
-        if (is_string($rawHeaders)) {
-            foreach (explode("\r\n", $rawHeaders) as $line) {
-                if (strpos($line, ':') !== false) {
-                    [$key, $value] = explode(':', $line, 2);
-                    $headers[trim($key)] = trim($value);
-                }
+        foreach (explode("\r\n", $rawHeaders) as $line) {
+            if (strpos($line, ':') !== false) {
+                [$key, $value] = explode(':', $line, 2);
+                $headers[trim($key)] = trim($value);
             }
         }
-
         return $headers;
     }
 
