@@ -91,7 +91,7 @@ class SmsAnalyzer
             $offset = 0;
             $len = strlen($string);
             while ($offset < $len) {
-                $grapheme = grapheme_extract($string, 1, GRAPHEME_EXTRACT_COUNT, $offset);
+                $grapheme = grapheme_extract($string, 1, 0, $offset);
                 if ($grapheme === false) {
                     break;
                 }

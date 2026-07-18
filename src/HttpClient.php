@@ -105,7 +105,7 @@ class HttpClient
     private function doRequest(string $method, string $url, ?array $body, string $requestId): array
     {
         $headers = [
-            'Authorization: Bearer ' . $this->apiKey,
+            'X-API-Key: ' . $this->apiKey,
             'Content-Type: application/json',
             'Accept: application/json',
             'User-Agent: sendafrica-php/1.0',
