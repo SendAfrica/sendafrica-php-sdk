@@ -35,18 +35,23 @@ class PhoneNormalizer
             throw new InvalidPhoneException("Phone number must contain only digits after removing formatting: got \"{$phone}\"");
         }
 
-        if (strlen($phone) >= 9 && strlen($phone) <= 15) {
-            if (strlen($phone) >= 12) {
-                return '+' . $phone;
-            }
-
-            $cc = $defaultCountryCode ?? self::DEFAULT_COUNTRY_CODE;
-            return '+' . $cc . $phone;
+        if (strlen($phone) < 9 || strlen($phone) > 15) {
+            throw new InvalidPhoneException(
+                "Phone number must be between 9 and 15 digits. Got " . strlen($phone) . " digits."
+            );
         }
 
-        throw new InvalidPhoneException(
-            "Phone number must be between 9 and 15 digits. Got " . strlen($phone) . " digits."
-        );
+        if (strlen($phone) >= 12) {
+            return '+' . $phone;
+        }
+
+        $cc = $defaultCountryCode ?? self::DEFAULT_COUNTRY_CODE;
+
+        if (strlen($phone) === 10 && $phone[0] === '0') {
+            return '+' . $cc . substr($phone, 1);
+        }
+
+        return '+' . $cc . $phone;
     }
 
     /**
