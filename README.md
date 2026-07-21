@@ -1,7 +1,7 @@
-# SendAfrica PHP SDK
+# SendAfrica SDK
 
-[![PHP](https://img.shields.io/packagist/php-v/sendafrica/php-sdk)](https://packagist.org/packages/sendafrica/php-sdk)
-[![Version](https://img.shields.io/packagist/v/sendafrica/php-sdk)](https://packagist.org/packages/sendafrica/php-sdk)
+[![PHP](https://img.shields.io/packagist/php-v/sendafrica/sendafrica)](https://packagist.org/packages/sendafrica/sendafrica)
+[![Version](https://img.shields.io/packagist/v/sendafrica/sendafrica)](https://packagist.org/packages/sendafrica/sendafrica)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 Official PHP client for the [SendAfrica](https://sendafrica.online) SMS
@@ -39,7 +39,7 @@ simple for a first integration, enough control for production use.
 ## Install
 
 ```bash
-composer require sendafrica/php-sdk
+composer require sendafrica/sendafrica
 ```
 
 **Requirements:** PHP 7.4+, ext-curl, ext-json
@@ -81,7 +81,7 @@ The SDK resolves your API key in this order:
 3. If neither is set, `AuthenticationException` is raised
 
 Every request includes an `Authorization: Bearer <key>` header. The SDK also
-attaches a `User-Agent: sendafrica-php/1.0` header and a unique
+attaches a `User-Agent: sendafrica/1.0` header and a unique
 `X-Request-Id` hex string per request for tracing.
 
 ---

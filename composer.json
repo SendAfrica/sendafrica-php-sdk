@@ -1,5 +1,5 @@
 {
-    "name": "sendafrica/php-sdk",
+    "name": "sendafrica/sendafrica",
     "description": "Official PHP client for the SendAfrica SMS Infrastructure-as-a-Service API.",
     "type": "library",
     "license": "MIT",

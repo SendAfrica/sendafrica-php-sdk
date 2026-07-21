@@ -108,7 +108,7 @@ class HttpClient
             'X-API-Key: ' . $this->apiKey,
             'Content-Type: application/json',
             'Accept: application/json',
-            'User-Agent: sendafrica-php/1.0',
+            'User-Agent: sendafrica/1.0',
             'X-Request-Id: ' . $requestId,
         ];
 
